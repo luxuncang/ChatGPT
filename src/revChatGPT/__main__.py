@@ -30,10 +30,7 @@ class CaptchaSolver:
             print("Captcha saved to captcha.png")
             png = svg2rlg(svg)
             f.write(png)
-        # Get input
-        solution = input("Please solve the captcha: ")
-        # Return the solution
-        return solution
+        return input("Please solve the captcha: ")
 
 
 def get_input(prompt):
@@ -46,10 +43,7 @@ def get_input(prompt):
             break
         lines.append(line)
 
-    # Join the lines, separated by newlines, and print the result
-    user_input = "\n".join(lines)
-    # print(user_input)
-    return user_input
+    return "\n".join(lines)
 
 
 def main():
@@ -74,11 +68,9 @@ def main():
         print("Press enter twice to submit your question.\n")
 
         config_files = ["config.json"]
-        xdg_config_home = getenv("XDG_CONFIG_HOME")
-        if xdg_config_home:
+        if xdg_config_home := getenv("XDG_CONFIG_HOME"):
             config_files.append(f"{xdg_config_home}/revChatGPT/config.json")
-        user_home = getenv("HOME")
-        if user_home:
+        if user_home := getenv("HOME"):
             config_files.append(f"{user_home}/.config/revChatGPT/config.json")
 
         config_file = next((f for f in config_files if exists(f)), None)

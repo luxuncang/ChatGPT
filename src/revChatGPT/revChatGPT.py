@@ -17,8 +17,7 @@ def generate_uuid() -> str:
     :return: a random UUID
     :rtype: :obj:`str`
     """
-    uid = str(uuid.uuid4())
-    return uid
+    return str(uuid.uuid4())
 
 
 class Chatbot:
@@ -68,7 +67,7 @@ class Chatbot:
         self.debug = debug
         self.config = config
         self.conversation_id = conversation_id
-        self.parent_id = parent_id if parent_id else generate_uuid()
+        self.parent_id = parent_id or generate_uuid()
         self.base_url = base_url
         self.request_timeout = request_timeout
         self.captcha_solver = captcha_solver
@@ -120,7 +119,7 @@ class Chatbot:
         :return: None
         """
         response = requests.post(
-            self.base_url + "backend-api/conversation",
+            f"{self.base_url}backend-api/conversation",
             headers=self.headers,
             data=json.dumps(data),
             stream=True,
@@ -129,7 +128,7 @@ class Chatbot:
         for line in response.iter_lines():
             try:
                 line = line.decode("utf-8")
-                if line == "" or line == "data: [DONE]":
+                if line in ["", "data: [DONE]"]:
                     continue
                 line = line[6:]
                 line = json.loads(line)
@@ -180,16 +179,18 @@ class Chatbot:
                 "https": self.config["proxy"],
             }
         response = s.post(
-            self.base_url + "backend-api/conversation",
+            f"{self.base_url}backend-api/conversation",
             data=json.dumps(data),
-            timeout=self.request_timeout
+            timeout=self.request_timeout,
         )
         # Check for expired token
-        if 'detail' in response.json().keys():
-            if 'code' in response['detail']:
-                if response['detail']['code'] == "invalid_api_key" or response['detail']['code'] == "token_expired":
-                    self.refresh_session()
-                    return self.__get_chat_text(data)
+        if (
+            'detail' in response.json().keys()
+            and 'code' in response['detail']
+            and response['detail']['code'] in ["invalid_api_key", "token_expired"]
+        ):
+            self.refresh_session()
+            return self.__get_chat_text(data)
         response = response.text.splitlines()[-4]
         response = response[6:]
         response = json.loads(response)
@@ -268,7 +269,7 @@ class Chatbot:
             )
             # s.cookies.set("__Secure-next-auth.csrf-token", self.config['csrf_token'])
             response = s.get(
-                self.base_url + "api/auth/session",
+                f"{self.base_url}api/auth/session",
                 headers={
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, "
                     "like Gecko) Version/16.1 Safari/605.1.15 ",
@@ -290,20 +291,18 @@ class Chatbot:
                 )
                 self.config["Authorization"] = response.json()["accessToken"]
                 self.__refresh_headers()
-            # If it fails, try to login with email and password to get tokens
             except Exception:
                 # Check if response JSON is empty
                 if response.json() == {}:
                     self.debugger.log("Empty response")
                     self.debugger.log("Probably invalid session token")
-                # Check if ['detail']['code'] == 'token_expired' in response JSON
-                # First check if detail is in response JSON
                 elif 'detail' in response.json():
                     # Check if code is in response JSON
-                    if 'code' in response.json()['detail']:
-                        # Check if code is token_expired
-                        if response.json()['detail']['code'] == 'token_expired':
-                            self.debugger.log("Token expired")
+                    if (
+                        'code' in response.json()['detail']
+                        and response.json()['detail']['code'] == 'token_expired'
+                    ):
+                        self.debugger.log("Token expired")
                 else:
                     self.debugger.log(f"Response: '{response.text}'")
                 self.debugger.log("Cannot refresh the session, try to login")
@@ -356,22 +355,22 @@ class Chatbot:
                     "Captcha not supported. Use session tokens instead.")
                 raise ValueError("Captcha detected") from exc
             raise exc
-        if auth.access_token is not None:
-            self.config["Authorization"] = auth.access_token
-            if auth.session_token is not None:
-                self.config["session_token"] = auth.session_token
-            else:
-                possible_tokens = auth.session.cookies.get(
-                    "__Secure-next-auth.session-token",
-                )
-                if possible_tokens is not None:
-                    if len(possible_tokens) > 1:
-                        self.config["session_token"] = possible_tokens[0]
-                    else:
-                        self.config["session_token"] = possible_tokens
-            self.__refresh_headers()
-        else:
+        if auth.access_token is None:
             raise Exception("Error logging in")
+        self.config["Authorization"] = auth.access_token
+        if auth.session_token is not None:
+            self.config["session_token"] = auth.session_token
+        else:
+            possible_tokens = auth.session.cookies.get(
+                "__Secure-next-auth.session-token",
+            )
+            if possible_tokens is not None:
+                self.config["session_token"] = (
+                    possible_tokens[0]
+                    if len(possible_tokens) > 1
+                    else possible_tokens
+                )
+        self.__refresh_headers()
 
 
 class AsyncChatBot(Chatbot):
@@ -385,17 +384,11 @@ class AsyncChatBot(Chatbot):
         :return: None
         """
         s = httpx.AsyncClient()
-        async with s.stream(
-            'POST',
-            self.base_url + "backend-api/conversation",
-            headers=self.headers,
-            data=json.dumps(data),
-            timeout=self.request_timeout,
-        ) as response:
+        async with s.stream('POST', f"{self.base_url}backend-api/conversation", headers=self.headers, data=json.dumps(data), timeout=self.request_timeout) as response:
             async for line in response.aiter_lines():
                 try:
                     line = line[:-1]
-                    if line == "" or line == "data: [DONE]":
+                    if line in ["", "data: [DONE]"]:
                         continue
                     line = line[6:]
                     line = json.loads(line)
@@ -447,16 +440,18 @@ class AsyncChatBot(Chatbot):
                     "https": self.config["proxy"],
                 }
             response = await s.post(
-                self.base_url + "backend-api/conversation",
+                f"{self.base_url}backend-api/conversation",
                 data=json.dumps(data),
                 timeout=self.request_timeout,
             )
-            # Check for expired token
-        if 'detail' in response.json().keys():
-            if 'code' in response['detail']:
-                if response['detail']['code'] == "invalid_api_key" or response['detail']['code'] == "token_expired":
-                    self.refresh_session()
-                    return self.__get_chat_text(data)
+                # Check for expired token
+        if (
+            'detail' in response.json().keys()
+            and 'code' in response['detail']
+            and response['detail']['code'] in ["invalid_api_key", "token_expired"]
+        ):
+            self.refresh_session()
+            return self.__get_chat_text(data)
         response = response.text.splitlines()[-4]
         response = response[6:]
         response = json.loads(response)
